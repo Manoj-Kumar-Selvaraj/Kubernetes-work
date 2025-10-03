@@ -271,3 +271,143 @@
 4. Debug events with: `kubectl get events --sort-by=.metadata.creationTimestamp`
 
 ---
+
+## ✅ Minimum Instance Size (Real World vs Lab)
+
+In a **corporate / production cluster**, the **minimum recommended size** for nodes is usually:
+
+* **vCPUs:** 2–4 vCPUs per node
+* **RAM:** 4–8 GB per node
+* **Disk:** 50–100 GB (managed SSD, not HDD)
+* **OS:** Ubuntu LTS or Azure Linux (RHEL is also common in enterprises)
+
+🔹 For a **learning / lab environment**, you can go smaller:
+
+* **2 vCPU, 4 GB RAM, 30 GB disk** → works fine for Kubernetes basics.
+
+---
+
+## ✅ Cluster Setup on Azure (3 Nodes)
+
+We’ll simulate a **real-world cluster** with:
+
+* **1 Control Plane (Master)** → runs API Server, etcd, controllers.
+* **2 Worker Nodes** → where your apps (pods, deployments, services) will run.
+
+### Step 1. Create Resource Group
+
+```bash
+az group create --name k8s-lab-rg --location eastus
+```
+
+### Step 2. Create 3 VMs (Ubuntu 22.04)
+
+Example (Standard_B2s: 2 vCPUs, 4GB RAM):
+
+```bash
+# Master node
+az vm create --resource-group k8s-lab-rg --name k8s-master \
+  --image Ubuntu2204 --size Standard_B2s \
+  --admin-username azureuser --generate-ssh-keys
+
+# Worker nodes
+az vm create --resource-group k8s-lab-rg --name k8s-worker1 \
+  --image Ubuntu2204 --size Standard_B2s \
+  --admin-username azureuser --generate-ssh-keys
+
+az vm create --resource-group k8s-lab-rg --name k8s-worker2 \
+  --image Ubuntu2204 --size Standard_B2s \
+  --admin-username azureuser --generate-ssh-keys
+```
+
+### Step 3. Open Required Ports (for Kubernetes)
+
+```bash
+az vm open-port --resource-group k8s-lab-rg --name k8s-master --port 6443 --priority 1001
+az vm open-port --resource-group k8s-lab-rg --name k8s-master --port 22 --priority 1002
+```
+
+(Workers only need SSH, master needs **6443** for API server communication.)
+
+---
+
+## ✅ Installing Kubernetes (with kubeadm)
+
+On all 3 nodes:
+
+```bash
+sudo apt update && sudo apt upgrade -y
+sudo apt install -y apt-transport-https ca-certificates curl
+sudo curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add -
+sudo bash -c 'cat <<EOF >/etc/apt/sources.list.d/kubernetes.list
+deb https://apt.kubernetes.io/ kubernetes-xenial main
+EOF'
+sudo apt update
+sudo apt install -y kubelet kubeadm kubectl containerd
+sudo apt-mark hold kubelet kubeadm kubectl
+```
+
+---
+
+### Step 4. Initialize Cluster (on Master)
+
+```bash
+sudo kubeadm init --pod-network-cidr=10.244.0.0/16
+```
+
+After success, it will give you a **kubeadm join command**.
+Save it for worker nodes.
+
+Set up kubeconfig on master:
+
+```bash
+mkdir -p $HOME/.kube
+sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+sudo chown $(id -u):$(id -g) $HOME/.kube/config
+```
+
+---
+
+### Step 5. Install Network Plugin (Weave or Flannel)
+
+Example with Flannel:
+
+```bash
+kubectl apply -f https://raw.githubusercontent.com/flannel-io/flannel/master/Documentation/kube-flannel.yml
+```
+
+---
+
+### Step 6. Join Worker Nodes
+
+Run the **join command** (from Step 4) on both workers.
+Example:
+
+```bash
+sudo kubeadm join <master-ip>:6443 --token <token> --discovery-token-ca-cert-hash sha256:<hash>
+```
+
+---
+
+### Step 7. Verify Cluster
+
+On master:
+
+```bash
+kubectl get nodes
+```
+
+You should see:
+
+```
+NAME           STATUS   ROLES           AGE   VERSION
+k8s-master     Ready    control-plane   10m   v1.30.x
+k8s-worker1    Ready    <none>          5m    v1.30.x
+k8s-worker2    Ready    <none>          5m    v1.30.x
+```
+
+---
+
+full shell script:
+
+
