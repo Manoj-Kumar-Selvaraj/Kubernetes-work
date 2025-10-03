@@ -37,7 +37,7 @@ create_vm_if_not_exists() {
         echo "==> Creating VM $VM_NAME..."
         az vm create --resource-group $RESOURCE_GROUP --name $VM_NAME \
           --image Ubuntu2204 --size $VM_SIZE \
-          --admin-username $ADMIN_USER --generate-ssh-keys --output none
+          --admin-username $ADMIN_USER --generate-ssh-keys --output json
     else
         echo "==> VM $VM_NAME already exists. Skipping creation."
     fi
@@ -50,8 +50,8 @@ create_vm_if_not_exists $WORKER2_VM
 
 # Open required ports for Master VM
 echo "==> Opening ports 6443 (K8s API) and 22 (SSH) on Master..."
-az vm open-port --resource-group $RESOURCE_GROUP --name $MASTER_VM --port 6443 --priority 1001 --output none || true
-az vm open-port --resource-group $RESOURCE_GROUP --name $MASTER_VM --port 22 --priority 1002 --output none || true
+az vm open-port --resource-group $RESOURCE_GROUP --name $MASTER_VM --port 6443 --priority 1001 --output json || true
+az vm open-port --resource-group $RESOURCE_GROUP --name $MASTER_VM --port 22 --priority 1002 --output json || true
 
 # Function to setup Kubernetes prerequisites on a node
 setup_node() {
@@ -72,7 +72,7 @@ setup_node() {
         sudo apt-mark hold kubelet kubeadm kubectl
         sudo systemctl enable containerd
         sudo systemctl start containerd
-    " --output none
+    " --output json
 }
 
 # Setup all nodes
@@ -91,7 +91,7 @@ az vm run-command invoke -g $RESOURCE_GROUP -n $MASTER_VM --command-id RunShellS
     else
         echo 'Kubernetes already initialized on master. Skipping.'
     fi
-" --output none
+" --output json
 
 # Fetch join command from master
 JOIN_CMD=$(az vm run-command invoke -g $RESOURCE_GROUP -n $MASTER_VM --command-id RunShellScript --scripts "
@@ -105,14 +105,14 @@ for NODE in $WORKER1_VM $WORKER2_VM; do
     echo "==> Joining $NODE to cluster..."
     az vm run-command invoke -g $RESOURCE_GROUP -n $NODE --command-id RunShellScript --scripts "
         sudo $JOIN_CMD || echo '$NODE might already be joined'
-    " --output none
+    " --output json
 done
 
 # Install Flannel CNI
 echo "==> Installing Flannel CNI on Master..."
 az vm run-command invoke -g $RESOURCE_GROUP -n $MASTER_VM --command-id RunShellScript --scripts "
     kubectl apply -f https://raw.githubusercontent.com/flannel-io/flannel/master/Documentation/kube-flannel.yml || echo 'Flannel already installed'
-" --output none
+" --output json
 
 echo "==> Kubernetes Cluster Setup Complete!"
 echo "Run this to SSH into master and check nodes:"
