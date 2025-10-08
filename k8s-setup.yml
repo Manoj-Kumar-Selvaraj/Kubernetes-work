@@ -92,9 +92,13 @@
   vars:
     pod_network_cidr: "10.244.0.0/16"
   tasks:
+    - name: Detect master node IP
+      ansible.builtin.set_fact:
+        master_ip: "{{ ansible_default_ipv4.address }}"
+
     - name: Initialize Kubernetes cluster
       ansible.builtin.command: >
-        kubeadm init --pod-network-cidr={{ pod_network_cidr }}
+        kubeadm init --apiserver-advertise-address={{ master_ip }} --pod-network-cidr={{ pod_network_cidr }}
       register: kubeadm_init
       args:
         creates: /etc/kubernetes/admin.conf
@@ -111,19 +115,20 @@
         chown {{ ansible_user }}:{{ ansible_user }} /home/{{ ansible_user }}/.kube/config
       args:
         executable: /bin/bash
-    - name: Wait for kube-apiserver to be ready
-      ansible.builtin.shell: |
-        kubectl wait --for=condition=Ready node --all --timeout=120s
-      args:
-        executable: /bin/bash
-      become: yes
-      become_user: azureuser
 
     - name: Install Flannel CNI
       ansible.builtin.shell: |
         kubectl apply -f https://raw.githubusercontent.com/flannel-io/flannel/master/Documentation/kube-flannel.yml
       args:
         executable: /bin/bash
+      become_user: "{{ ansible_user }}"
+
+    - name: Wait for all nodes to be ready
+      ansible.builtin.shell: |
+        kubectl wait --for=condition=Ready node --all --timeout=300s
+      args:
+        executable: /bin/bash
+      become_user: "{{ ansible_user }}"
 
 # Worker nodes join
 - name: Join Worker Nodes
