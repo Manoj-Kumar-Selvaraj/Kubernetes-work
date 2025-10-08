@@ -3,6 +3,7 @@ set -e
 
 # =========================
 # Kubernetes Cluster Setup Script on Azure (Ubuntu 22.04)
+# Fully Automated
 # =========================
 
 # Variables
@@ -88,11 +89,8 @@ sudo apt-get install -y apt-transport-https ca-certificates curl gpg
 sudo mkdir -p /etc/apt/keyrings
 
 # Add official Kubernetes repo for Ubuntu 22.04
-curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.34/deb/Release.key | \
-  sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
-
-echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.34/deb/ /' | \
-  sudo tee /etc/apt/sources.list.d/kubernetes.list
+curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.34/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.34/deb/ /' | sudo tee /etc/apt/sources.list.d/kubernetes.list
 
 sudo apt-get update -y
 sudo apt-get install -y kubelet kubeadm kubectl containerd
@@ -109,31 +107,33 @@ setup_node $WORKER1_VM
 setup_node $WORKER2_VM
 
 # =========================
-# Initialize Kubernetes on Master
+# Initialize Kubernetes on Master (background)
 # =========================
-echo "==> Initializing Kubernetes on Master..."
+echo "==> Initializing Kubernetes on Master in background..."
 az vm run-command invoke -g $RESOURCE_GROUP -n $MASTER_VM \
     --command-id RunShellScript \
     --scripts "
+# Only initialize if log not exists
 if [ ! -f /home/$ADMIN_USER/kubeinit.log ]; then
-    sudo kubeadm init --pod-network-cidr=10.244.0.0/16 | tee /home/$ADMIN_USER/kubeinit.log
-    mkdir -p /home/$ADMIN_USER/.kube
-    sudo cp -i /etc/kubernetes/admin.conf /home/$ADMIN_USER/.kube/config
-    sudo chown $ADMIN_USER:$ADMIN_USER /home/$ADMIN_USER/.kube/config
-else
-    echo 'Kubernetes already initialized on master. Skipping.'
+    sudo kubeadm init --pod-network-cidr=10.244.0.0/16 > /home/$ADMIN_USER/kubeinit.log 2>&1 &
 fi
-    " --output table
+" --output table
 
 # =========================
-# Fetch join command from Master
+# Wait for join command to appear
 # =========================
-JOIN_CMD=$(az vm run-command invoke -g $RESOURCE_GROUP -n $MASTER_VM \
-    --command-id RunShellScript \
-    --scripts "grep 'kubeadm join' /home/$ADMIN_USER/kubeinit.log" \
-    --query "value[0].message" -o tsv | tail -1)
+echo "==> Waiting for kubeadm join command..."
+JOIN_CMD=""
+while [[ -z \$JOIN_CMD ]]; do
+    sleep 60
+    JOIN_CMD=$(az vm run-command invoke -g $RESOURCE_GROUP -n $MASTER_VM \
+        --command-id RunShellScript \
+        --scripts "grep 'kubeadm join' /home/$ADMIN_USER/kubeinit.log || echo ''" \
+        --query "value[0].message" -o tsv | tail -1)
+    echo "==> Waiting for kubeadm init to finish..."
+done
 
-echo "==> Join command: $JOIN_CMD"
+echo "==> Join command detected: $JOIN_CMD"
 
 # =========================
 # Join Worker Nodes to Cluster
@@ -147,13 +147,18 @@ for NODE in $WORKER1_VM $WORKER2_VM; do
 done
 
 # =========================
-# Install Flannel CNI
+# Configure kubectl on Master and install Flannel
 # =========================
-echo "==> Installing Flannel CNI on Master..."
+echo "==> Configuring kubectl on Master and installing Flannel..."
 az vm run-command invoke -g $RESOURCE_GROUP -n $MASTER_VM \
     --command-id RunShellScript \
-    --scripts "kubectl apply -f https://raw.githubusercontent.com/flannel-io/flannel/master/Documentation/kube-flannel.yml || echo 'Flannel already installed'" \
-    --output table
+    --scripts "
+mkdir -p /home/$ADMIN_USER/.kube
+sudo cp -i /etc/kubernetes/admin.conf /home/$ADMIN_USER/.kube/config
+sudo chown $ADMIN_USER:$ADMIN_USER /home/$ADMIN_USER/.kube/config
+
+kubectl apply -f https://raw.githubusercontent.com/flannel-io/flannel/master/Documentation/kube-flannel.yml
+" --output table
 
 echo "==> Kubernetes Cluster Setup Complete!"
 echo "SSH into Master and verify nodes:"
