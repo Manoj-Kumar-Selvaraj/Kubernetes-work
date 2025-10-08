@@ -75,7 +75,7 @@
           - kubeadm
           - kubectl
         state: present
-        mark: hold
+        dpkg_options: "hold"
 
     - name: Enable and start containerd
       ansible.builtin.systemd:
