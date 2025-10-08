@@ -1,10 +1,10 @@
 ---
+vars:
+  pod_network_cidr: "10.244.0.0/16"
+  kube_version: "1.34"
 - name: Kubernetes Cluster Setup - Common Tasks
   hosts: all
   become: yes
-  vars:
-    pod_network_cidr: "10.244.0.0/16"
-    kube_version: "1.34"
 
   tasks:
     - name: Disable swap
