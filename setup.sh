@@ -2,9 +2,10 @@
 set -e
 
 # =========================
-# Azure Infra Setup for Kubernetes Cluster
+# Kubernetes Cluster Setup Script on Azure (Ubuntu 22.04)
 # =========================
 
+# Variables
 RESOURCE_GROUP="k8s-lab-rg"
 LOCATION="eastus"
 MASTER_VM="k8s-master"
@@ -13,7 +14,9 @@ WORKER2_VM="k8s-worker2"
 VM_SIZE="Standard_B2s"
 ADMIN_USER="azureuser"
 LOG_FILE="./k8s_setup.log"
+HOSTS_FILE="./hosts.ini"
 
+# Logging setup: console + log file
 echo "==> Logging output to $LOG_FILE"
 exec > >(tee -i $LOG_FILE)
 exec 2>&1
@@ -61,30 +64,29 @@ echo "==> Opening ports 6443 (K8s API) and 22 (SSH) on Master..."
 az vm open-port --resource-group $RESOURCE_GROUP --name $MASTER_VM --port 6443 --priority 1001 --output table || true
 az vm open-port --resource-group $RESOURCE_GROUP --name $MASTER_VM --port 22 --priority 1002 --output table || true
 
-# =========================
-# Fetch private IPs for Ansible inventory
-# =========================
-MASTER_IP=$(az vm show -d -g $RESOURCE_GROUP -n $MASTER_VM --query privateIps -o tsv)
-WORKER1_IP=$(az vm show -d -g $RESOURCE_GROUP -n $WORKER1_VM --query privateIps -o tsv)
-WORKER2_IP=$(az vm show -d -g $RESOURCE_GROUP -n $WORKER2_VM --query privateIps -o tsv)
+# Open SSH for Worker Nodes
+for NODE in $WORKER1_VM $WORKER2_VM; do
+    echo "==> Opening SSH port 22 on $NODE..."
+    az vm open-port --resource-group $RESOURCE_GROUP --name $NODE --port 22 --priority 1001 --output table || true
+done
 
 # =========================
 # Generate Ansible hosts.ini
 # =========================
-cat > hosts.ini <<EOF
+echo "==> Fetching public IPs for Ansible inventory..."
+MASTER_IP=$(az vm list-ip-addresses -g $RESOURCE_GROUP -n $MASTER_VM --query "[0].virtualMachine.network.publicIpAddresses[0].ipAddress" -o tsv)
+WORKER1_IP=$(az vm list-ip-addresses -g $RESOURCE_GROUP -n $WORKER1_VM --query "[0].virtualMachine.network.publicIpAddresses[0].ipAddress" -o tsv)
+WORKER2_IP=$(az vm list-ip-addresses -g $RESOURCE_GROUP -n $WORKER2_VM --query "[0].virtualMachine.network.publicIpAddresses[0].ipAddress" -o tsv)
+
+cat > $HOSTS_FILE <<EOL
 [k8s-master]
-$MASTER_VM ansible_host=$MASTER_IP ansible_user=$ADMIN_USER
+$MASTER_IP ansible_user=$ADMIN_USER ansible_ssh_private_key_file=~/.ssh/id_rsa
 
 [k8s-workers]
-$WORKER1_VM ansible_host=$WORKER1_IP ansible_user=$ADMIN_USER
-$WORKER2_VM ansible_host=$WORKER2_IP ansible_user=$ADMIN_USER
-EOF
+$WORKER1_IP ansible_user=$ADMIN_USER ansible_ssh_private_key_file=~/.ssh/id_rsa
+$WORKER2_IP ansible_user=$ADMIN_USER ansible_ssh_private_key_file=~/.ssh/id_rsa
+EOL
 
-echo "==> Ansible inventory generated: hosts.ini"
-echo "[k8s-master]"
-echo "$MASTER_VM -> $MASTER_IP"
-echo "[k8s-workers]"
-echo "$WORKER1_VM -> $WORKER1_IP"
-echo "$WORKER2_VM -> $WORKER2_IP"
-
-echo "==> Azure infra setup complete! You can now run the Ansible playbook to setup Kubernetes."
+echo "==> Ansible inventory saved to $HOSTS_FILE"
+echo "==> Setup complete. You can now run your Ansible playbook:"
+echo "ansible-playbook -i $HOSTS_FILE k8s-setup.yml"
