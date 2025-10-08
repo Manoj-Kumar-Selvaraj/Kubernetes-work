@@ -35,23 +35,15 @@
         path: /etc/apt/keyrings/kubernetes-apt-keyring.gpg
         state: absent
 
-    - name: Create keyrings directory
-      ansible.builtin.file:
-        path: /etc/apt/keyrings
-        state: directory
-        mode: '0755'
-
     - name: Add Kubernetes GPG key
-      ansible.builtin.shell: |
-        curl -fsSL https://pkgs.k8s.io/core:/stable:/v{{ kube_version }}/deb/Release.key | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
-      args:
-        executable: /bin/bash
-      register: add_key
-      changed_when: add_key.rc == 0
+      ansible.builtin.apt_key:
+        url: https://packages.cloud.google.com/apt/doc/apt-key.gpg
+        keyring: /usr/share/keyrings/kubernetes-archive-keyring.gpg
+        state: present
 
     - name: Add Kubernetes repository
       ansible.builtin.apt_repository:
-        repo: "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v{{ kube_version }}/deb/ /"
+        repo: "deb [signed-by=/usr/share/keyrings/kubernetes-archive-keyring.gpg] https://apt.kubernetes.io/ kubernetes-xenial main"
         state: present
 
     - name: Update apt cache
