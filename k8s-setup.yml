@@ -4,7 +4,7 @@
   become: yes
   vars:
     pod_network_cidr: "10.244.0.0/16"
-    kube_version: "1.34.1"
+    kube_version: "1.34"
 
   tasks:
     - name: Disable swap
@@ -44,15 +44,16 @@
     - name: Add Kubernetes GPG key
       ansible.builtin.shell: |
         curl -fsSL https://pkgs.k8s.io/core:/stable:/v{{ kube_version }}/deb/Release.key | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+        chmod 644 /etc/apt/keyrings/kubernetes-apt-keyring.gpg
       args:
         executable: /bin/bash
-      register: add_key
-      changed_when: add_key.rc == 0
 
-    - name: Add Kubernetes repository (pkgs.k8s.io)
-      ansible.builtin.apt_repository:
-        repo: "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v{{ kube_version }}/deb/ /"
-        state: present
+    - name: Add Kubernetes repository
+      ansible.builtin.shell: |
+        echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v{{ kube_version }}/deb/ /" | tee /etc/apt/sources.list.d/kubernetes.list
+        chmod 644 /etc/apt/sources.list.d/kubernetes.list
+      args:
+        executable: /bin/bash
 
     - name: Update apt cache
       ansible.builtin.apt:
@@ -66,7 +67,6 @@
           - kubectl
           - containerd
         state: present
-        allow_unauthenticated: yes
 
     - name: Hold kubeadm, kubelet, kubectl
       ansible.builtin.apt:
