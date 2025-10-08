@@ -116,18 +116,22 @@
       args:
         executable: /bin/bash
 
+    - name: Wait for kube-apiserver to be ready
+      ansible.builtin.shell: |
+        export KUBECONFIG=/home/{{ ansible_user }}/.kube/config
+        kubectl wait --for=condition=Ready node --all --timeout=180s
+      args:
+        executable: /bin/bash
+      become: yes
+      become_user: "{{ ansible_user }}"
+
     - name: Install Flannel CNI
       ansible.builtin.shell: |
+        export KUBECONFIG=/home/{{ ansible_user }}/.kube/config
         kubectl apply -f https://raw.githubusercontent.com/flannel-io/flannel/master/Documentation/kube-flannel.yml
       args:
         executable: /bin/bash
-      become_user: "{{ ansible_user }}"
-
-    - name: Wait for all nodes to be ready
-      ansible.builtin.shell: |
-        kubectl wait --for=condition=Ready node --all --timeout=300s
-      args:
-        executable: /bin/bash
+      become: yes
       become_user: "{{ ansible_user }}"
 
 # Worker nodes join
