@@ -2,7 +2,7 @@
 set -e
 
 # =========================
-# Kubernetes Cluster Setup Script on Azure
+# Kubernetes Cluster Setup Script on Azure (Ubuntu 22.04)
 # =========================
 
 # Variables
@@ -73,13 +73,20 @@ setup_node() {
         --command-id RunShellScript \
         --scripts "
 sudo apt-get update -y
-sudo apt-get install -y apt-transport-https ca-certificates curl gnupg lsb-release
+sudo apt-get install -y apt-transport-https ca-certificates curl gpg
 sudo mkdir -p /etc/apt/keyrings
-curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-archive-keyring.gpg
-echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-archive-keyring.gpg] https://apt.kubernetes.io/ kubernetes-xenial main' | sudo tee /etc/apt/sources.list.d/kubernetes.list
+
+# Add official Kubernetes repo for Ubuntu 22.04
+curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.30/deb/Release.key | \
+  sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+
+echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.30/deb/ /' | \
+  sudo tee /etc/apt/sources.list.d/kubernetes.list
+
 sudo apt-get update -y
 sudo apt-get install -y kubelet kubeadm kubectl containerd
 sudo apt-mark hold kubelet kubeadm kubectl
+
 sudo systemctl enable containerd
 sudo systemctl start containerd
         " --output table
@@ -138,5 +145,5 @@ az vm run-command invoke -g $RESOURCE_GROUP -n $MASTER_VM \
     --output table
 
 echo "==> Kubernetes Cluster Setup Complete!"
-echo "SSH into Master and check nodes:"
+echo "SSH into Master and verify nodes:"
 echo "az ssh vm -g $RESOURCE_GROUP -n $MASTER_VM"
