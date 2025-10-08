@@ -107,7 +107,7 @@
     - name: Setup kubectl config for user
       ansible.builtin.shell: |
         mkdir -p /home/{{ ansible_user }}/.kube
-        cp -i /etc/kubernetes/admin.conf /home/{{ ansible_user }}/.kube/config
+        cp /etc/kubernetes/admin.conf /home/{{ ansible_user }}/.kube/config
         chown {{ ansible_user }}:{{ ansible_user }} /home/{{ ansible_user }}/.kube/config
       args:
         executable: /bin/bash
