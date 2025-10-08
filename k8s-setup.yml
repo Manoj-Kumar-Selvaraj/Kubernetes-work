@@ -1,5 +1,5 @@
 ---
-- name: Kubernetes Cluster Setup
+- name: Kubernetes Cluster Setup - Common Tasks
   hosts: all
   become: yes
   vars:
@@ -25,15 +25,15 @@
         state: present
         reload: yes
 
-    - name: Install prerequisites
-      ansible.builtin.apt:
-        name:
-          - apt-transport-https
-          - ca-certificates
-          - curl
-          - gnupg
-        state: present
-        update_cache: yes
+    - name: Remove old Kubernetes repo
+      ansible.builtin.file:
+        path: /etc/apt/sources.list.d/kubernetes.list
+        state: absent
+
+    - name: Remove old Kubernetes keyring
+      ansible.builtin.file:
+        path: /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+        state: absent
 
     - name: Create keyrings directory
       ansible.builtin.file:
@@ -43,7 +43,7 @@
 
     - name: Add Kubernetes GPG key
       ansible.builtin.shell: |
-        curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.34/deb/Release.key | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+        curl -fsSL https://pkgs.k8s.io/core:/stable:/v{{ kube_version }}/deb/Release.key | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
       args:
         executable: /bin/bash
       register: add_key
@@ -51,7 +51,7 @@
 
     - name: Add Kubernetes repository
       ansible.builtin.apt_repository:
-        repo: "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.34/deb/ /"
+        repo: "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v{{ kube_version }}/deb/ /"
         state: present
 
     - name: Update apt cache
@@ -99,7 +99,7 @@
         content: "{{ kubeadm_init.stdout }}"
         dest: /home/{{ ansible_user }}/kubeinit.log
 
-    - name: Setup kubectl config for azureuser
+    - name: Setup kubectl config for user
       ansible.builtin.shell: |
         mkdir -p /home/{{ ansible_user }}/.kube
         cp -i /etc/kubernetes/admin.conf /home/{{ ansible_user }}/.kube/config
