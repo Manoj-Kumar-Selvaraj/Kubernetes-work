@@ -116,6 +116,8 @@
         kubectl wait --for=condition=Ready node --all --timeout=120s
       args:
         executable: /bin/bash
+      become: yes
+      become_user: azureuser
 
     - name: Install Flannel CNI
       ansible.builtin.shell: |
