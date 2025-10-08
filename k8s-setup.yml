@@ -1,7 +1,6 @@
 ---
-# Kubernetes Cluster Setup Playbook
+# Kubernetes Cluster Setup Playbook with Public IP support
 
-# Global variables
 - name: Kubernetes Cluster Setup - Common Tasks
   hosts: all
   become: yes
@@ -92,13 +91,20 @@
   vars:
     pod_network_cidr: "10.244.0.0/16"
   tasks:
-    - name: Detect master node IP
+    - name: Detect private IP
       ansible.builtin.set_fact:
         master_ip: "{{ ansible_default_ipv4.address }}"
 
-    - name: Initialize Kubernetes cluster
+    - name: Detect public IP (Azure metadata)
+      ansible.builtin.set_fact:
+        public_ip: "{{ lookup('url', 'http://169.254.169.254/metadata/instance/network/interface/0/ipv4/ipAddress/0/publicIpAddress?api-version=2021-02-01&format=text', split_lines=False) }}"
+
+    - name: Initialize Kubernetes cluster with public IP
       ansible.builtin.command: >
-        kubeadm init --apiserver-advertise-address={{ master_ip }} --pod-network-cidr={{ pod_network_cidr }}
+        kubeadm init
+        --apiserver-advertise-address={{ master_ip }}
+        --apiserver-cert-extra-sans={{ public_ip }}
+        --pod-network-cidr={{ pod_network_cidr }}
       register: kubeadm_init
       args:
         creates: /etc/kubernetes/admin.conf
@@ -116,13 +122,20 @@
       args:
         executable: /bin/bash
 
+    - name: Update kubeconfig to use public IP
+      ansible.builtin.shell: |
+        export KUBECONFIG=/home/{{ ansible_user }}/.kube/config
+        kubectl config set-cluster kubernetes --server=https://{{ public_ip }}:6443
+      args:
+        executable: /bin/bash
+      become_user: "{{ ansible_user }}"
+
     - name: Wait for kube-apiserver to be ready
       ansible.builtin.shell: |
         export KUBECONFIG=/home/{{ ansible_user }}/.kube/config
         kubectl wait --for=condition=Ready node --all --timeout=180s
       args:
         executable: /bin/bash
-      become: yes
       become_user: "{{ ansible_user }}"
 
     - name: Install Flannel CNI
@@ -131,7 +144,6 @@
         kubectl apply -f https://raw.githubusercontent.com/flannel-io/flannel/master/Documentation/kube-flannel.yml
       args:
         executable: /bin/bash
-      become: yes
       become_user: "{{ ansible_user }}"
 
 # Worker nodes join
