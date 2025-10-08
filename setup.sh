@@ -72,15 +72,26 @@ setup_node() {
     az vm run-command invoke -g $RESOURCE_GROUP -n $NODE \
         --command-id RunShellScript \
         --scripts "
+# Disable swap
+sudo swapoff -a
+sudo sed -i '/ swap / s/^/#/' /etc/fstab
+
+# Enable IP forwarding
+sudo sysctl -w net.ipv4.ip_forward=1
+echo 'net.ipv4.ip_forward=1' | sudo tee -a /etc/sysctl.conf
+sudo sysctl -p
+
+# Install prerequisites
 sudo apt-get update -y
 sudo apt-get install -y apt-transport-https ca-certificates curl gpg
+
 sudo mkdir -p /etc/apt/keyrings
 
 # Add official Kubernetes repo for Ubuntu 22.04
-curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.30/deb/Release.key | \
+curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.34/deb/Release.key | \
   sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
 
-echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.30/deb/ /' | \
+echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.34/deb/ /' | \
   sudo tee /etc/apt/sources.list.d/kubernetes.list
 
 sudo apt-get update -y
