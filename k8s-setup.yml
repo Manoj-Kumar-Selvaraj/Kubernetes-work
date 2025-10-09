@@ -95,9 +95,10 @@
       ansible.builtin.set_fact:
         master_ip: "{{ ansible_default_ipv4.address }}"
 
-    - name: Detect public IP (Azure metadata)
-      ansible.builtin.set_fact:
-        public_ip: "{{ lookup('url', 'http://169.254.169.254/metadata/instance/network/interface/0/ipv4/ipAddress/0/publicIpAddress?api-version=2021-02-01&format=text', split_lines=False) }}"
+    - name: Get public IP via Azure CLI
+      shell: az vm list-ip-addresses -g <resource_group> -n <vm_name> --query "[].virtualMachine.network.publicIpAddresses[0].ipAddress" -o tsv
+      register: public_ip
+
 
     - name: Initialize Kubernetes cluster with public IP
       ansible.builtin.command: >
