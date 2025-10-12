@@ -1261,6 +1261,184 @@ aws ec2 describe-subnets --filters "Name=tag-key,Values=kubernetes.io/role/elb"
 
 ---
 
-Now you have **end-to-end control** over how your EKS cluster communicates internally and externally.
+# 🧩 Step 1 — Application Deployment Basics on EKS
+
+You’ll learn:
+
+* How to deploy apps to EKS
+* How Kubernetes organizes workloads (Pods, Deployments, Services)
+* How to expose your app publicly
+* How to scale and roll back
 
 ---
+
+## ⚙️ 1.1 Confirm Cluster Access
+
+Make sure `kubectl` is configured to your EKS cluster.
+
+```bash
+aws eks update-kubeconfig --region <REGION> --name <CLUSTER_NAME>
+kubectl get nodes
+kubectl get pods -A
+```
+
+✅ You should see your worker nodes and system pods like `coredns`, `aws-node`, `kube-proxy`.
+
+---
+
+## 🏗️ 1.2 Create a Sample App Deployment
+
+Let’s deploy a **simple NGINX web app**.
+
+### ➤ `nginx-deployment.yaml`
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-deployment
+  labels:
+    app: nginx
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: nginx
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:1.25
+        ports:
+        - containerPort: 80
+```
+
+Apply it:
+
+```bash
+kubectl apply -f nginx-deployment.yaml
+```
+
+Check:
+
+```bash
+kubectl get deployments
+kubectl get pods -l app=nginx
+```
+
+✅ You’ll see 2 Pods running.
+
+---
+
+## 🌐 1.3 Expose the App Using a Service
+
+A **Service** exposes your app internally or externally.
+
+### ➤ `nginx-service.yaml`
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-service
+spec:
+  type: LoadBalancer
+  selector:
+    app: nginx
+  ports:
+    - port: 80
+      targetPort: 80
+```
+
+Apply:
+
+```bash
+kubectl apply -f nginx-service.yaml
+```
+
+Check:
+
+```bash
+kubectl get svc nginx-service
+```
+
+Wait for an **EXTERNAL-IP** to appear — that’s your AWS Load Balancer URL (created automatically by EKS).
+
+Visit that URL in a browser — you’ll see the NGINX default page 🟢
+
+---
+
+## 🔁 1.4 Scale the App
+
+To handle more traffic, scale your deployment:
+
+```bash
+kubectl scale deployment nginx-deployment --replicas=5
+kubectl get pods -l app=nginx
+```
+
+✅ You’ll now have 5 replicas (Pods).
+
+---
+
+## ♻️ 1.5 Rolling Updates (Updating Your App)
+
+You can update container versions safely:
+
+```bash
+kubectl set image deployment/nginx-deployment nginx=nginx:1.26
+kubectl rollout status deployment/nginx-deployment
+```
+
+Check rollout history:
+
+```bash
+kubectl rollout history deployment nginx-deployment
+```
+
+Rollback if needed:
+
+```bash
+kubectl rollout undo deployment nginx-deployment
+```
+
+✅ This is how Kubernetes keeps zero downtime while updating — one pod at a time.
+
+---
+
+## 🧹 1.6 Clean Up (Optional)
+
+If you want to remove the deployment:
+
+```bash
+kubectl delete deployment nginx-deployment
+kubectl delete service nginx-service
+```
+
+---
+
+## 💡 Summary
+
+| Concept        | Description                               | Command                            |
+| -------------- | ----------------------------------------- | ---------------------------------- |
+| **Deployment** | Manages replica sets and rolling updates  | `kubectl apply -f deployment.yaml` |
+| **Service**    | Exposes your app internally or externally | `kubectl apply -f service.yaml`    |
+| **Scaling**    | Increase/decrease replicas                | `kubectl scale`                    |
+| **Rollout**    | Track/undo updates                        | `kubectl rollout`                  |
+| **Cleanup**    | Remove resources                          | `kubectl delete`                   |
+
+---
+
+### ✅ You’ve now mastered basic app deployment in EKS.
+
+Next, we’ll go pro-level:
+
+> **Step 2 — Helm: Packaging, Versioning & Simplifying EKS Deployments**
+
+Helm will help you manage your app versions, configs, and upgrades more easily than raw YAMLs.
+
+
+
