@@ -1857,3 +1857,295 @@ Next comes the **final piece of EKS mastery** —
 
 This includes **rolling updates**, **blue-green**, **canary**, **zero-downtime patching**, and **automated rollback logic** used in enterprises.
 
+Excellent 💪 — this is the final and most **advanced part** of your EKS mastery journey — how **real production teams** deploy, patch, and roll out updates **safely and automatically**.
+
+By the end of this step, you’ll understand and be able to implement **rolling, blue-green, and canary deployments**, how to **patch and upgrade** apps without downtime, and how Helm + Flux make these strategies seamless.
+
+---
+
+# 🔁 Step 4 — Application Patching & Deployment Strategies on EKS
+
+---
+
+## 🧩 4.1 Kubernetes Deployment Strategies Overview
+
+Kubernetes offers **three main ways** to roll out new versions of an app:
+
+| Strategy           | Description                                                            | Downtime | Complexity |
+| ------------------ | ---------------------------------------------------------------------- | -------- | ---------- |
+| **Rolling Update** | Gradually replace old pods with new ones.                              | None     | Low        |
+| **Recreate**       | Stop all old pods, then start new ones.                                | High     | Simple     |
+| **Blue-Green**     | Run two versions (blue/green) side-by-side, switch traffic when ready. | None     | Medium     |
+| **Canary**         | Release to a small % of users, monitor, then scale to all.             | None     | High       |
+
+---
+
+## ⚙️ 4.2 Rolling Update (Zero Downtime)
+
+Rolling Update is the **default** strategy for Kubernetes Deployments.
+
+Example YAML with strategy settings:
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-deployment
+spec:
+  replicas: 4
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1      # at most one pod down during update
+      maxSurge: 1            # temporarily add one extra pod
+  selector:
+    matchLabels:
+      app: nginx
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:1.25
+        ports:
+        - containerPort: 80
+```
+
+### Apply & Upgrade
+
+```bash
+kubectl apply -f nginx-deployment.yaml
+kubectl set image deployment/nginx-deployment nginx=nginx:1.26
+kubectl rollout status deployment/nginx-deployment
+```
+
+### Roll Back if Needed
+
+```bash
+kubectl rollout undo deployment nginx-deployment
+```
+
+✅ Pods update one-by-one → no downtime.
+
+---
+
+## 🧱 4.3 Recreate Strategy (simple but disruptive)
+
+Replace the strategy section with:
+
+```yaml
+strategy:
+  type: Recreate
+```
+
+When you update:
+
+* Kubernetes kills all old pods first.
+* Then starts new pods.
+  ⚠️ Short downtime — used rarely, mostly when old and new versions cannot coexist (e.g., DB schema change).
+
+---
+
+## 🔵🟢 4.4 Blue-Green Deployment in EKS
+
+Blue-Green = run both old (blue) and new (green) deployments simultaneously, and switch traffic via a Service.
+
+### Example
+
+```yaml
+# blue deployment (currently live)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-blue
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: nginx
+      version: blue
+  template:
+    metadata:
+      labels:
+        app: nginx
+        version: blue
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:1.25
+---
+# green deployment (new version)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-green
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: nginx
+      version: green
+  template:
+    metadata:
+      labels:
+        app: nginx
+        version: green
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:1.26
+---
+# Service switches traffic
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-service
+spec:
+  selector:
+    app: nginx
+    version: blue   # later change to 'green' to switch traffic
+  ports:
+    - port: 80
+```
+
+➡️ When testing succeeds, simply patch the Service:
+
+```bash
+kubectl patch svc nginx-service -p '{"spec": {"selector": {"app": "nginx", "version": "green"}}}'
+```
+
+✅ Instant traffic switch, zero downtime.
+Then delete blue once you confirm success.
+
+---
+
+## 🐤 4.5 Canary Deployments (incremental rollouts)
+
+Canary = release new version to small subset of users.
+
+Simplest approach (without service mesh):
+Split replicas manually.
+
+```yaml
+# stable version
+spec:
+  replicas: 3
+  template:
+    metadata:
+      labels:
+        app: nginx
+        track: stable
+---
+# canary version
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: nginx
+        track: canary
+```
+
+Your Service selects both:
+
+```yaml
+selector:
+  app: nginx
+```
+
+➡️ 1/4 of traffic goes to canary pods.
+If metrics look good → increase canary replicas gradually → replace stable.
+
+For automated canary analysis, you’d add **Flagger**, which integrates Flux + Prometheus.
+
+---
+
+## 🧩 4.6 Patching Deployments
+
+You can patch images, env vars, resource limits, etc. dynamically.
+
+```bash
+kubectl patch deployment nginx-deployment \
+  -p '{"spec":{"template":{"spec":{"containers":[{"name":"nginx","image":"nginx:1.27"}]}}}}'
+```
+
+Flux + Helm can do this automatically based on Git commits.
+
+---
+
+## 🧱 4.7 Helm-Based Rollouts & Patching
+
+Helm supports rolling updates by default.
+
+Example upgrade:
+
+```bash
+helm upgrade nginx-release ./nginx-chart --set image.tag=1.27
+helm history nginx-release
+helm rollback nginx-release <REVISION>
+```
+
+Flux can watch this chart and auto-upgrade it when `values.yaml` changes.
+
+---
+
+## 🧠 4.8 Observability During Rollouts
+
+Monitor live health and status:
+
+```bash
+kubectl get rollout nginx-deployment
+kubectl describe deployment nginx-deployment
+kubectl get events --sort-by=.metadata.creationTimestamp
+```
+
+Add **readiness/liveness probes** to ensure traffic only hits healthy pods:
+
+```yaml
+livenessProbe:
+  httpGet:
+    path: /
+    port: 80
+  initialDelaySeconds: 10
+  periodSeconds: 5
+readinessProbe:
+  httpGet:
+    path: /
+    port: 80
+  initialDelaySeconds: 5
+  periodSeconds: 5
+```
+
+---
+
+## 🧭 4.9 Summary of Deployment Strategies
+
+| Strategy           | Tool           | Use Case                | Downtime | Example    |
+| ------------------ | -------------- | ----------------------- | -------- | ---------- |
+| **Rolling Update** | `kubectl`/Helm | General app upgrades    | 🚫       | Default    |
+| **Recreate**       | `kubectl`      | Incompatible versions   | ⚠️       | DB changes |
+| **Blue-Green**     | Service switch | Safe version cut-over   | 🚫       | Controlled |
+| **Canary**         | Flagger + Flux | Gradual traffic rollout | 🚫       | Testing    |
+
+---
+
+## 🧰 Optional Advanced Tools
+
+| Tool                     | Use Case                                              |
+| ------------------------ | ----------------------------------------------------- |
+| **Flagger**              | Automates Canary deployments + rollback using metrics |
+| **Argo Rollouts**        | Advanced traffic routing + progressive delivery       |
+| **Velero**               | Backup/restore apps and EBS volumes                   |
+| **AWS App Mesh + Istio** | Fine-grained traffic splitting and routing            |
+
+---
+
+✅ **You’ve now mastered EKS end-to-end application lifecycle:**
+
+* Deploy apps manually or via Helm
+* Automate updates via FluxCD (GitOps)
+* Patch & upgrade apps safely with Rolling, Blue-Green, or Canary strategies
+
+---
